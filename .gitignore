@@ -1,0 +1,9 @@
+# Never commit the wallet
+.faith
+.env
+
+# Local runner artifacts (VPS deployments keep these on the server)
+praiser.out
+praise_log.jsonl
+__pycache__/
+*.pyc
