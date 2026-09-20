@@ -2,8 +2,7 @@
 .faith
 .env
 
-# Local runner artifacts (VPS deployments keep these on the server)
+# Local runner artifacts
 praiser.out
-praise_log.jsonl
 __pycache__/
 *.pyc
