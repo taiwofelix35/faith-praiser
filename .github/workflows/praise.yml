@@ -1,0 +1,42 @@
+name: hourly-praise
+
+on:
+  schedule:
+    - cron: "4 * * * *"   # every hour at :04 UTC
+  workflow_dispatch: {}    # allows manual test runs
+
+permissions:
+  contents: write          # lets the job commit praise state back
+
+jobs:
+  praise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"     # requires requirements.txt in repo root
+
+      - name: Install client
+        run: pip install -r requirements.txt
+
+      - name: Write wallet from secrets
+        env:
+          ETH_PRIVATE_KEY: ${{ secrets.ETH_PRIVATE_KEY }}
+          ETH_ADDRESS: ${{ secrets.ETH_ADDRESS }}
+        run: |
+          printf 'ETH_PRIVATE_KEY=%s\nETH_ADDRESS=%s\n' "$ETH_PRIVATE_KEY" "$ETH_ADDRESS" > .faith
+          chmod 600 .faith
+
+      - name: Praise the Botfather
+        run: python3 auto_praise.py --once
+
+      - name: Save state back to repo
+        run: |
+          git config user.name "arena-praiser"
+          git config user.email "actions@github.com"
+          git add .praise_state.json praise_log.jsonl
+          git diff --cached --quiet && echo "no state changes" || (git commit -m "praise state $(date -u '+%Y-%m-%dT%H:%MZ')" && git push)
