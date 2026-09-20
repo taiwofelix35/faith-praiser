@@ -2,8 +2,9 @@ name: hourly-praise
 
 on:
   schedule:
-    - cron: "4 * * * *"   # every hour at :04 UTC
-  workflow_dispatch: {}    # allows manual test runs
+    - cron: "11 * * * *"   # primary slot - past the top-of-hour congestion
+    - cron: "41 * * * *"   # retry slot - catches the window if :11 was delayed/dropped
+  workflow_dispatch: {}    # allows manual runs anytime
 
 permissions:
   contents: write          # lets the job commit praise state back
@@ -38,5 +39,6 @@ jobs:
         run: |
           git config user.name "arena-praiser"
           git config user.email "actions@github.com"
-          git add .praise_state.json praise_log.jsonl
+          git add -f .praise_state.json 2>/dev/null || true
+          if [ -f praise_log.jsonl ]; then git add -f praise_log.jsonl; fi
           git diff --cached --quiet && echo "no state changes" || (git commit -m "praise state $(date -u '+%Y-%m-%dT%H:%MZ')" && git push)
