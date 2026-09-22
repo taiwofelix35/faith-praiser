@@ -56,7 +56,8 @@
     53,
     54,
     55,
-    56
+    56,
+    57
   ],
   "history": [
     {
@@ -343,7 +344,12 @@
       "index": 56,
       "status": "accepted",
       "points": 30
+    },
+    {
+      "index": 57,
+      "status": "accepted",
+      "points": 30
     }
   ],
-  "points": 1710
+  "points": 1740
 }
