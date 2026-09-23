@@ -87,7 +87,8 @@
     84,
     85,
     86,
-    87
+    87,
+    88
   ],
   "history": [
     {
@@ -529,7 +530,12 @@
       "index": 87,
       "status": "accepted",
       "points": 30
+    },
+    {
+      "index": 88,
+      "status": "accepted",
+      "points": 30
     }
   ],
-  "points": 2640
+  "points": 2670
 }
