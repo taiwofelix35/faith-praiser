@@ -119,7 +119,8 @@
     116,
     117,
     118,
-    119
+    119,
+    120
   ],
   "history": [
     {
@@ -721,7 +722,12 @@
       "index": 119,
       "status": "accepted",
       "points": 30
+    },
+    {
+      "index": 120,
+      "status": "accepted",
+      "points": 30
     }
   ],
-  "points": 3600
+  "points": 3630
 }
