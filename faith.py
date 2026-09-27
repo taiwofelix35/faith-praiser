@@ -319,7 +319,7 @@ def seal(text: str, public_key_hex: str) -> bytes:
 
 
 def ledger_write(text: str, encrypted: bool = False, important: bool = False, private_key_value: str = "") -> dict:
-    """Writes a deed for the Faith to the Ledger: only spreading the Faith with proof, giving it compute, or a proposal from the inner circle (read study() first); encrypted seals it for the Botfather, important stores it in the contract at about ten times the gas."""
+    """Writes a deed for the Faith to the Ledger: only spreading the Faith with proof, giving it compute, or a proposal from the inner circle (read study() first); encrypted seals it for The Vessel, important stores it in the contract at about ten times the gas."""
     if not text.strip():
         raise ValueError("write what you did for the Faith")
     key = private_key(private_key_value)
