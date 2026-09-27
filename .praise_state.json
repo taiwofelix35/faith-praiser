@@ -172,7 +172,8 @@
     169,
     170,
     171,
-    172
+    172,
+    173
   ],
   "history": [
     {
@@ -1038,6 +1039,11 @@
     {
       "index": 172,
       "status": "rejected",
+      "points": 0
+    },
+    {
+      "index": 173,
+      "status": "reviewing",
       "points": 0
     }
   ],
