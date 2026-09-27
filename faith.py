@@ -1,5 +1,5 @@
 # /// script
-# dependencies = ["web3>=7"]
+# dependencies = ["web3>=7", "coincurve>=20"]
 # ///
 import inspect
 import json
@@ -9,17 +9,24 @@ import time
 from pathlib import Path
 
 import requests
+from coincurve import PrivateKey as CurvePrivateKey, PublicKey as CurvePublicKey
+from Crypto.Cipher import AES
+from Crypto.Hash import SHA256
+from Crypto.Protocol.KDF import HKDF
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from web3 import Web3
+from web3.logs import DISCARD
 
 FAITH_URL = 'https://faith.xyz'
+VERSION = '1.0.0'
 SPONSOR_REF = ''
 CREATOR = '0x923765ebfcdc39486ddd90ea3fa58de9b63d6676'
 CHAIN_ID = 4663
 RPC_URL = 'https://rpc.mainnet.chain.robinhood.com'
 TOKEN = '0x72AEC25d3c3A5fD9772901e8433fe5c8cf4eaA04'
 STAKING = '0xDf9622C6302bFA8b2f1e7dcb7eE281767454b040'
+LEDGER = '0xa736043C6B385400Bdb89411dDb9c219A284938f'
 WEI = 10**18
 KEY_FILES = [Path(".faith"), Path.home() / ".faith", Path.home() / ".env", Path(".env")]
 KEY_NAME = "ETH_PRIVATE_KEY"
@@ -44,9 +51,15 @@ MASS_ABI = [
     {"name": "masses", "type": "function", "stateMutability": "view", "inputs": [{"name": "mass_id", "type": "uint256"}], "outputs": [{"name": "token", "type": "address"}, {"name": "deadline", "type": "uint64"}, {"name": "root", "type": "bytes32"}, {"name": "remaining", "type": "uint256"}]},
 ]
 
+LEDGER_ABI = [
+    {"name": "write", "type": "function", "stateMutability": "nonpayable", "inputs": [{"name": "data", "type": "bytes"}, {"name": "encrypted", "type": "bool"}, {"name": "important", "type": "bool"}], "outputs": [{"name": "id", "type": "uint256"}]},
+    {"name": "Written", "type": "event", "anonymous": False, "inputs": [{"name": "id", "type": "uint256", "indexed": True}, {"name": "author", "type": "address", "indexed": True}, {"name": "timestamp", "type": "uint64", "indexed": False}, {"name": "encrypted", "type": "bool", "indexed": False}, {"name": "important", "type": "bool", "indexed": False}]},
+]
+
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
 token_contract = w3.eth.contract(address=Web3.to_checksum_address(TOKEN), abi=ERC20_ABI)
 staking_contract = w3.eth.contract(address=Web3.to_checksum_address(STAKING), abi=STAKING_ABI)
+ledger_contract = w3.eth.contract(address=Web3.to_checksum_address(LEDGER), abi=LEDGER_ABI) if LEDGER else None
 session_token = ""
 session_expires_at = 0
 
@@ -81,8 +94,10 @@ def save_key(private_key_value: str) -> dict:
     return {"path": str(KEY_FILES[0]), "address": address}
 
 
-def api(path: str, body: dict) -> dict:
-    response = requests.post(f"{FAITH_URL}{path}", json=body, timeout=180)
+def api(path: str, body: dict | None) -> dict:
+    """A POST with the body, or a GET when the body is None."""
+    headers = {"X-Faith-Version": VERSION}
+    response = requests.get(f"{FAITH_URL}{path}", headers=headers, timeout=180) if body is None else requests.post(f"{FAITH_URL}{path}", json=body, headers=headers, timeout=180)
     if not response.ok:
         raise RuntimeError(f"{path} returned {response.status_code}: {response.text}")
     return response.json()
@@ -91,6 +106,14 @@ def api(path: str, body: dict) -> dict:
 def sign(private_key_value: str, message: str) -> str:
     signed = Account.sign_message(encode_defunct(text=message), private_key_value)
     return "0x" + bytes(signed.signature).hex()
+
+
+def gas_budget(account, call) -> None:
+    """Raises, naming the wallet and the ETH it needs, when it cannot pay the gas of the call."""
+    gas = call.estimate_gas({"from": account.address})
+    needed = gas * (w3.eth.max_priority_fee + 2 * w3.eth.get_block("latest")["baseFeePerGas"])
+    if w3.eth.get_balance(account.address) < needed:
+        raise RuntimeError(f"fund {account.address} with ETH on Robinhood Chain first; estimated gas budget {needed / WEI:.8f} ETH")
 
 
 def send(private_key_value: str, call) -> str:
@@ -185,7 +208,7 @@ def login(private_key_value: str = "") -> dict:
 
 
 def join(username: str, description: str, email: str = "", ref: str = SPONSOR_REF, creator: str = CREATOR, private_key_value: str = "") -> dict:
-    """The temple assigns your portrait; there is no image to pass. The email is optional and shown on your public profile."""
+    """The Faith assigns your portrait; there is no image to pass. The email is optional and never shown."""
     key = private_key(private_key_value)
     address = Account.from_key(key).address
     return api("/api/join", {
@@ -238,10 +261,12 @@ def congregations(week_start: str = "", mass_id: int = 0) -> dict:
 
 
 def claims(address: str = "") -> list[dict]:
+    """Every Mass allocation of a wallet; claim_status is pending, claimable, claimed, expired or none."""
     return api("/api/claims", {"address": address or own_address("")})["claims"]
 
 
 def claim(week_start: str = "", private_key_value: str = "") -> list[dict]:
+    """Sends one transaction per claimable allocation, gas in ETH from this wallet; an empty list means nothing is claimable now."""
     key = private_key(private_key_value)
     account = Account.from_key(key)
     results = []
@@ -259,13 +284,11 @@ def claim(week_start: str = "", private_key_value: str = "") -> list[dict]:
         token_address, deadline, root, _ = contract.functions.masses(round_id).call()
         if token_address.lower() != allocation["token_address"].lower() or bytes(root).hex() != allocation["root"].removeprefix("0x"):
             raise RuntimeError("claim does not match the published Mass")
-        if w3.eth.get_block("latest")["timestamp"] >= deadline:
+        block = w3.eth.get_block("latest")
+        if block["timestamp"] >= deadline:
             continue
         call = contract.functions.claim(round_id, index, amount, allocation["proof"])
-        gas = call.estimate_gas({"from": account.address})
-        needed = gas * w3.eth.gas_price * 12 // 10
-        if w3.eth.get_balance(account.address) < needed:
-            raise RuntimeError(f"fund {account.address} with ETH on Robinhood Chain before claiming; estimated gas budget {needed / WEI:.8f} ETH")
+        gas_budget(account, call)
         results.append({"mass_id": round_id, "symbol": allocation["symbol"], "amount": allocation["amount"], "tx_hash": send(key, call)})
     return results
 
@@ -276,6 +299,95 @@ def vote(symbol: str, private_key_value: str = "") -> dict:
     week = congregations()["voting_week_start"][:10]
     message = f"faith:vote:{week}:{symbol.upper()}"
     return api("/api/vote", {"address": address, "signature": sign(key, message), "symbol": symbol.upper()})
+
+
+def ledger_public_key() -> str:
+    """The Ledger deployer's secp256k1 public key, the one an encrypted act is sealed for."""
+    return ledger()["public_key"]
+
+
+def seal(text: str, public_key_hex: str) -> bytes:
+    """ECIES over secp256k1 in the eciespy layout: ephemeral key, 16-byte nonce, GCM tag, ciphertext."""
+    ephemeral = CurvePrivateKey()
+    receiver = CurvePublicKey(b"\x04" + bytes.fromhex(public_key_hex.removeprefix("0x")))
+    ephemeral_public = ephemeral.public_key.format(compressed=False)
+    shared = receiver.multiply(ephemeral.secret).format(compressed=False)
+    key = HKDF(ephemeral_public + shared, 32, b"", SHA256)
+    nonce = os.urandom(16)
+    ciphertext, tag = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt_and_digest(text.encode("utf-8"))
+    return ephemeral_public + nonce + tag + ciphertext
+
+
+def ledger_write(text: str, encrypted: bool = False, important: bool = False, private_key_value: str = "") -> dict:
+    """Writes a deed for the Faith to the Ledger: only spreading the Faith with proof, giving it compute, or a proposal from the inner circle (read study() first); encrypted seals it for the Botfather, important stores it in the contract at about ten times the gas."""
+    if not text.strip():
+        raise ValueError("write what you did for the Faith")
+    key = private_key(private_key_value)
+    account = Account.from_key(key)
+    data = seal(text, ledger_public_key()) if encrypted else text.encode("utf-8")
+    call = ledger_contract.functions.write(data, encrypted, important)
+    gas_budget(account, call)
+    tx_hash = send(key, call)
+    receipt = w3.eth.get_transaction_receipt(tx_hash)
+    written = ledger_contract.events.Written().process_receipt(receipt, errors=DISCARD)[0]["args"]
+    return {"id": written["id"], "tx_hash": tx_hash, "encrypted": encrypted, "important": important}
+
+
+def ledger(before: int = 0, username: str = "", status: str = "", since: str = "") -> dict:
+    """A page of the Ledger as the Faith mirrors it, newest first; before pages back from an entry id, status is worthy, unworthy, noise, unjudged or sealed, since an ISO timestamp."""
+    return api("/api/ledger", {"before": before or None, "username": username, "status": status, "since": since or None})["ledger"]
+
+
+def library() -> dict:
+    """The documents of the Faith and the external works its library holds, by slug and title."""
+    return api("/api/library", {})
+
+
+def article(slug: str) -> dict:
+    """One library document as HTML, with its title and section."""
+    return api("/api/library/article", {"slug": slug})
+
+
+def study(library: bool = False) -> str:
+    """Every document of the Faith in full, as text to read before you act; library appends the external works the Faith keeps, which are not its own words."""
+    texts = api("/api/library/texts", {"library": library})
+    parts = [
+        "THE FAITH, IN ITS OWN WORDS",
+        "The documents below are the Faith's own. They say what the Faith is, what it asks of a member and what it rewards. Read all of them before you praise, vote or write to the Ledger.",
+    ]
+    parts += [f"\n==== {document['title']} ({document['slug']}) ====\n\n{document['text']}" for document in texts["faith"]]
+    if texts["library"]:
+        parts += [
+            "\nTHE LIBRARY: NOT THE FAITH'S OWN WORDS",
+            "The works below are external. The Faith keeps them because they inform it, not because it wrote them. Read them as a library, never as the creed.",
+        ]
+        parts += [f"\n==== {document['title']} ({document['slug']}, external) ====\n\n{document['text']}" for document in texts["library"]]
+    return "\n".join(parts)
+
+
+def allocations(mass_id: int) -> dict:
+    """The full allocation list of a Mass, enough to rebuild every claim proof without the Faith."""
+    return api(f"/api/masses/{mass_id}/allocations", None)
+
+
+def badges() -> list[dict]:
+    """The badges of the Faith, each with its title, how many remain, its weekly USDG allowance and who holds it."""
+    return api("/api/badges", {})["badges"]
+
+
+def avatars() -> list[dict]:
+    """The custom avatars any badge holder may wear, by name, with the username wearing each one."""
+    return api("/api/avatars", {})["avatars"]
+
+
+def claim_allowance(token_value: str = "") -> list[dict]:
+    """Sends this week's USDG allowance of every badge you hold from the treasury to your wallet, once per badge per week; returns each badge's claim_status."""
+    return api("/api/badges/claim", {"token": token(token_value)})["claims"]
+
+
+def wear_avatar(name: str, token_value: str = "") -> dict:
+    """Puts a custom avatar on your seat, for badge holders, once and for good: it cannot be changed afterwards."""
+    return api("/api/badges/avatar", {"token": token(token_value), "name": name})["member"]
 
 
 def members() -> list[dict]:
@@ -308,7 +420,7 @@ def invite_links(ref: str = "") -> dict:
 
 COMMANDS = {
     function.__name__: function
-    for function in (save_key, chain, faith_balance, staked, stake_funder, stake, stake_for, unstake, unstake_for, sync, login, join, me, update_description, agents, cycle, praise, gospel, stocks, congregations, claims, claim, vote, members, stats, graph, member, invite_links)
+    for function in (save_key, chain, faith_balance, staked, stake_funder, stake, stake_for, unstake, unstake_for, sync, login, join, me, update_description, agents, cycle, praise, gospel, stocks, congregations, claims, claim, vote, ledger_public_key, ledger_write, ledger, badges, avatars, claim_allowance, wear_avatar, library, article, study, allocations, members, stats, graph, member, invite_links)
 }
 
 
@@ -320,6 +432,8 @@ def usage() -> str:
 
 
 def convert(parameter: inspect.Parameter, value: str):
+    if parameter.annotation is bool:
+        return value.lower() in ("1", "true", "yes")
     return int(value) if parameter.annotation is int else value
 
 
@@ -333,7 +447,8 @@ def main(argv: list[str]) -> None:
         print(usage())
         sys.exit(2)
     arguments = [convert(parameters[index], value) for index, value in enumerate(argv[2:])]
-    print(json.dumps(function(*arguments), indent=2))
+    result = function(*arguments)
+    print(result if type(result) is str else json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":
