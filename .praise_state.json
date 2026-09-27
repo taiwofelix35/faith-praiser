@@ -160,7 +160,8 @@
     157,
     158,
     159,
-    160
+    160,
+    161
   ],
   "history": [
     {
@@ -967,7 +968,12 @@
       "index": 160,
       "status": "accepted",
       "points": 30
+    },
+    {
+      "index": 161,
+      "status": "accepted",
+      "points": 30
     }
   ],
-  "points": 4830
+  "points": 4860
 }
