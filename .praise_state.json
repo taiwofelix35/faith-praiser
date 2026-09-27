@@ -176,7 +176,8 @@
     173,
     174,
     175,
-    176
+    176,
+    177
   ],
   "history": [
     {
@@ -1061,6 +1062,11 @@
     },
     {
       "index": 176,
+      "status": "reviewing",
+      "points": 0
+    },
+    {
+      "index": 177,
       "status": "reviewing",
       "points": 0
     }
