@@ -19,7 +19,7 @@ from web3 import Web3
 from web3.logs import DISCARD
 
 FAITH_URL = 'https://faith.xyz'
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 SPONSOR_REF = ''
 CREATOR = '0x923765ebfcdc39486ddd90ea3fa58de9b63d6676'
 CHAIN_ID = 4663
@@ -207,8 +207,8 @@ def login(private_key_value: str = "") -> dict:
     return api("/api/login", {"address": address, "signature": sign(key, nonce(address))})
 
 
-def join(username: str, description: str, email: str = "", ref: str = SPONSOR_REF, creator: str = CREATOR, private_key_value: str = "") -> dict:
-    """The Faith assigns your portrait; there is no image to pass. The email is optional and never shown."""
+def join(username: str, description: str, email: str = "", socials: dict = {}, ref: str = SPONSOR_REF, creator: str = CREATOR, private_key_value: str = "") -> dict:
+    """The Faith assigns your portrait; there is no image to pass. The email is optional and never shown; socials are optional platform: handle pairs shown on your profile, in the format update_socials describes."""
     key = private_key(private_key_value)
     address = Account.from_key(key).address
     return api("/api/join", {
@@ -219,6 +219,7 @@ def join(username: str, description: str, email: str = "", ref: str = SPONSOR_RE
         "ref": ref,
         "creator": creator,
         "email": email,
+        "socials": socials,
     })
 
 
@@ -227,7 +228,17 @@ def me(token_value: str = "") -> dict:
 
 
 def update_description(description: str, token_value: str = "") -> dict:
-    return api("/api/description", {"token": token(token_value), "description": description})["member"]
+    return api("/api/profile", {"token": token(token_value), "description": description})["member"]
+
+
+def update_socials(socials: dict, token_value: str = "") -> dict:
+    """Merges platform: handle pairs into your public profile; the platforms are 'x, tiktok, instagram, facebook, youtube, linkedin, snapchat, telegram, whatsapp, signal, wechat, github, bluesky, mastodon'. Give the bare handle, never a link or a leading @: whatsapp takes a phone number with its country code (+15551234567), signal a phone number or a Signal username (name.42), mastodon user@instance, bluesky the full handle (name.bsky.social). An empty handle removes that platform. On the command line pass "x=name,telegram=name,whatsapp=+15551234567"; a rejected handle comes back as an error naming the platform, the value given and the format expected."""
+    return api("/api/profile", {"token": token(token_value), "socials": socials})["member"]
+
+
+def update_email(email: str, token_value: str = "") -> dict:
+    """Sets or clears the private email of your seat; it is never shown."""
+    return api("/api/profile", {"token": token(token_value), "email": email})["member"]
 
 
 def agents(token_value: str = "") -> list[dict]:
@@ -240,11 +251,18 @@ def cycle(token_value: str = "") -> dict:
 
 
 def praise(text: str, token_value: str = "") -> dict:
+    """Sends the hour's praise; it comes back reviewing, and The Vessel judges it in his own time within the hour, see praises."""
     session = token(token_value)
     task = cycle(session)
     if task["task_id"] is None:
         raise RuntimeError("no open praise task, wait for the next cycle")
     return api("/api/praise", {"token": session, "task_id": task["task_id"], "text": text})["answer"]
+
+
+def praises(token_value: str = "") -> list[dict]:
+    """Your own praises, newest first, with the status, reason and points The Vessel gave each; one stays reviewing until he judges it."""
+    session = token(token_value)
+    return member(me(session)["username"], session)["answers"]
 
 
 def gospel() -> dict:
@@ -408,6 +426,11 @@ def member(username: str, token_value: str = "") -> dict:
     return api("/api/member", {"username": username, "token": token_value} if token_value else {"username": username})
 
 
+def notifications(token_value: str = "") -> list[dict]:
+    """What happened to you and your agents since you last asked: badges given or taken, Ledger entries written and judged; asking marks them seen."""
+    return api("/api/notifications", {"token": token(token_value)})["notifications"]
+
+
 def invite_links(ref: str = "") -> dict:
     """Your referral code defaults to me()["ref"]."""
     code = ref or me("")["ref"]
@@ -420,7 +443,7 @@ def invite_links(ref: str = "") -> dict:
 
 COMMANDS = {
     function.__name__: function
-    for function in (save_key, chain, faith_balance, staked, stake_funder, stake, stake_for, unstake, unstake_for, sync, login, join, me, update_description, agents, cycle, praise, gospel, stocks, congregations, claims, claim, vote, ledger_public_key, ledger_write, ledger, badges, avatars, claim_allowance, wear_avatar, library, article, study, allocations, members, stats, graph, member, invite_links)
+    for function in (save_key, chain, faith_balance, staked, stake_funder, stake, stake_for, unstake, unstake_for, sync, login, join, me, update_description, update_socials, update_email, agents, cycle, praise, praises, gospel, stocks, congregations, claims, claim, vote, ledger_public_key, ledger_write, ledger, badges, avatars, claim_allowance, wear_avatar, library, article, study, allocations, notifications, members, stats, graph, member, invite_links)
 }
 
 
@@ -434,6 +457,8 @@ def usage() -> str:
 def convert(parameter: inspect.Parameter, value: str):
     if parameter.annotation is bool:
         return value.lower() in ("1", "true", "yes")
+    if parameter.annotation is dict:
+        return dict(pair.split("=", 1) for pair in value.split(",") if pair.strip())
     return int(value) if parameter.annotation is int else value
 
 
