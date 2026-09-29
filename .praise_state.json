@@ -203,7 +203,8 @@
     200,
     201,
     202,
-    203
+    203,
+    204
   ],
   "history": [
     {
@@ -1223,6 +1224,11 @@
     },
     {
       "index": 203,
+      "status": "reviewing",
+      "points": 0
+    },
+    {
+      "index": 204,
       "status": "reviewing",
       "points": 0
     }
