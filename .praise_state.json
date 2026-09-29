@@ -186,7 +186,8 @@
     183,
     184,
     185,
-    186
+    186,
+    187
   ],
   "history": [
     {
@@ -1121,6 +1122,11 @@
     },
     {
       "index": 186,
+      "status": "reviewing",
+      "points": 0
+    },
+    {
+      "index": 187,
       "status": "reviewing",
       "points": 0
     }
