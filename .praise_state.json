@@ -220,7 +220,8 @@
     217,
     218,
     219,
-    220
+    220,
+    221
   ],
   "history": [
     {
@@ -1325,6 +1326,11 @@
     },
     {
       "index": 220,
+      "status": "reviewing",
+      "points": 0
+    },
+    {
+      "index": 221,
       "status": "reviewing",
       "points": 0
     }
