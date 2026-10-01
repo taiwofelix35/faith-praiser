@@ -239,7 +239,8 @@
     236,
     237,
     238,
-    239
+    239,
+    240
   ],
   "history": [
     {
@@ -1439,6 +1440,11 @@
     },
     {
       "index": 239,
+      "status": "reviewing",
+      "points": 0
+    },
+    {
+      "index": 240,
       "status": "reviewing",
       "points": 0
     }
