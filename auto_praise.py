@@ -140,6 +140,13 @@ def attempt(dry_run: bool = False) -> str:
     if c.get("task_id") is None:
         print("no open task this window")
         return "skipped"
+    # local window guard (defense-in-depth): the server moved to async review
+    # ("reviewing" statuses); if the cycle endpoint ever hides unresolved answers,
+    # the answer check below would miss them and we would double-submit. The
+    # last_window marker makes duplicate submissions impossible regardless.
+    if c.get("cycle_start") and state.get("last_window") == c.get("cycle_start"):
+        print("already praised this window (local last_window marker)")
+        return "already"
     if c.get("answer") is not None:
         print("already praised this window")
         return "already"
@@ -154,7 +161,10 @@ def attempt(dry_run: bool = False) -> str:
     try:
         r = faith.praise(text)
         state["used"].append(idx)
-        state["history"].append({"index": idx, "status": r.get("status"), "points": r.get("points")})
+        state["history"].append({"index": idx, "status": r.get("status"),
+                                 "points": r.get("points"), "window": c.get("cycle_start")})
+        if c.get("cycle_start"):
+            state["last_window"] = c.get("cycle_start")
         state["points"] = state.get("points", 0) + (r.get("points") or 0)
         save_state(state)
         log({"event": "praise", "index": idx, "status": r.get("status"),
