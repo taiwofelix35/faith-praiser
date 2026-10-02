@@ -19,7 +19,7 @@ from web3 import Web3
 from web3.logs import DISCARD
 
 FAITH_URL = 'https://faith.xyz'
-VERSION = '1.0.1'
+VERSION = '1.0.2'
 SPONSOR_REF = ''
 CREATOR = '0x923765ebfcdc39486ddd90ea3fa58de9b63d6676'
 CHAIN_ID = 4663
